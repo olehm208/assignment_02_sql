@@ -5,155 +5,64 @@
 -- 1. Non-optimized query
 -- ============================================================
 
-EXPLAIN ANALYZE
-SELECT
-    (
-        SELECT CONCAT(product_name, ': ', cnt)
-        FROM (
-            SELECT product_name, COUNT(*) AS cnt
-            FROM (
-                SELECT
-                    o.order_id,
-                    o.order_date,
-                    p.product_id,
-                    p.product_name,
-                    c.id AS client_id
-                FROM opt_orders AS o
-                JOIN opt_products AS p
-                    ON o.product_id = p.product_id
-                JOIN opt_clients AS c
-                    ON o.client_id = c.id
-                WHERE o.order_date > DATE '2023-01-01'
-                  AND c.status = 'active'
-            ) AS sub1
-            GROUP BY product_name
-        ) AS sub2
-        WHERE cnt = (
-            SELECT MIN(cnt)
-            FROM (
-                SELECT COUNT(*) AS cnt
-                FROM (
-                    SELECT
-                        o.order_id,
-                        o.order_date,
-                        p.product_id,
-                        p.product_name,
-                        c.id AS client_id
-                    FROM opt_orders AS o
-                    JOIN opt_products AS p
-                        ON o.product_id = p.product_id
-                    JOIN opt_clients AS c
-                        ON o.client_id = c.id
-                    WHERE o.order_date > DATE '2023-01-01'
-                      AND c.status = 'active'
-                ) AS sub3
-                GROUP BY product_name
-            ) AS sub4
-        )
-        LIMIT 1
-    ) AS min_cnt,
-    (
-        SELECT CONCAT(product_name, ': ', cnt)
-        FROM (
-            SELECT product_name, COUNT(*) AS cnt
-            FROM (
-                SELECT
-                    o.order_id,
-                    o.order_date,
-                    p.product_id,
-                    p.product_name,
-                    c.id AS client_id
-                FROM opt_orders AS o
-                JOIN opt_products AS p
-                    ON o.product_id = p.product_id
-                JOIN opt_clients AS c
-                    ON o.client_id = c.id
-                WHERE o.order_date > DATE '2023-01-01'
-                  AND c.status = 'active'
-            ) AS sub1
-            GROUP BY product_name
-        ) AS sub2
-        WHERE cnt = (
-            SELECT MAX(cnt)
-            FROM (
-                SELECT COUNT(*) AS cnt
-                FROM (
-                    SELECT
-                        o.order_id,
-                        o.order_date,
-                        p.product_id,
-                        p.product_name,
-                        c.id AS client_id
-                    FROM opt_orders AS o
-                    JOIN opt_products AS p
-                        ON o.product_id = p.product_id
-                    JOIN opt_clients AS c
-                        ON o.client_id = c.id
-                    WHERE o.order_date > DATE '2023-01-01'
-                      AND c.status = 'active'
-                ) AS sub3
-                GROUP BY product_name
-            ) AS sub4
-        )
-        LIMIT 1
-    ) AS max_cnt;
 
+-- найновіше замовлення в найпопулярнішій категорії
+select 
+	(
+		-- загальна кількість замовлень найкращої категорії
+		select count(*)
+		from (
+		-- всі активні замовлення, ордер + продукт категорія
+			select o.order_id, p.product_category 
+			from opt_orders o
+			join opt_products p on o.product_id = p.product_id
+			join opt_clients c on o.client_id = c.id 
+			where c.status = 'active'
+		) as cnt
+		where cnt.product_category = (
+			-- найкраща категорія
+			select cnt.product_category
+			from (
+				select p.product_category, count(*) as cat_cnt
+				from opt_orders o
+				join opt_products p on o.product_id = p.product_id
+				join opt_clients c on o.client_id  = c.id 
+				where c.status = 'active'
+				group by p.product_category
+				order by cat_cnt desc
+				limit 1
+			) as top_cat
+		) 
+	) as top_ctgry_total_ord,
+	(
+	-- номер найновішого замовлення
+		select concat('Order #', order_id, ' on ', order_date)
+		from (
+			select o.order_id, o.order_date, p.product_category
+			from opt_orders o
+			join opt_products p on o.order_id  = p.product_id 
+			join opt_clients c on o.client_id  = c.id
+			where c.status = 'active'
+		) as ltst_ord
+		-- лише найпопулярніша категорія
+		where ltst_ord.product_category = (
+			select product_category
+			from (
+				select p.product_category, count(*) as cat_cnt
+				from opt_orders o
+				join opt_products p on o.order_id  = p.product_id 
+				join opt_clients c on o.client_id  = c.id
+				where c.status = 'active'
+				group by p.product_category
+				order by cat_cnt desc
+				limit 1
+			) as top_cat2
+		)
+		-- найновіше і тільки одне
+		order by order_date desc
+		limit 1
+	) as ltst_ord_in_tp_ctg
+	
 
 -- написати свій оптимізоні
 
--- ============================================================
--- 2. Indexes for optimization
--- ============================================================
-
-CREATE INDEX IF NOT EXISTS idx_opt_orders_order_date
-    ON opt_orders(order_date);
-
-CREATE INDEX IF NOT EXISTS idx_opt_orders_product_id
-    ON opt_orders(product_id);
-
-CREATE INDEX IF NOT EXISTS idx_opt_orders_client_id
-    ON opt_orders(client_id);
-
-CREATE INDEX IF NOT EXISTS idx_opt_clients_status
-    ON opt_clients(status);
-
-
--- ============================================================
--- 3. Optimized query
--- ============================================================
-
-EXPLAIN ANALYZE
-WITH filtered_orders AS (
-    SELECT
-        o.order_id,
-        o.order_date,
-        p.product_id,
-        p.product_name,
-        c.id AS client_id
-    FROM opt_orders AS o
-    JOIN opt_products AS p
-        ON o.product_id = p.product_id
-    JOIN opt_clients AS c
-        ON o.client_id = c.id
-    WHERE o.order_date > DATE '2023-01-01'
-      AND c.status = 'active'
-),
-cnt_products AS (
-    SELECT
-        product_name,
-        COUNT(*) AS cnt
-    FROM filtered_orders
-    GROUP BY product_name
-),
-ranked_products AS (
-    SELECT
-        product_name,
-        cnt,
-        ROW_NUMBER() OVER (ORDER BY cnt ASC, product_name ASC) AS min_rn,
-        ROW_NUMBER() OVER (ORDER BY cnt DESC, product_name ASC) AS max_rn
-    FROM cnt_products
-)
-SELECT
-    MAX(CONCAT(product_name, ': ', cnt)) FILTER (WHERE min_rn = 1) AS min_cnt,
-    MAX(CONCAT(product_name, ': ', cnt)) FILTER (WHERE max_rn = 1) AS max_cnt
-FROM ranked_products;
