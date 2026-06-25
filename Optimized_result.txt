@@ -1,0 +1,93 @@
+Result  (cost=18285.30..18285.31 rows=1 width=40) (actual time=146.627..152.797 rows=1.00 loops=1)
+  Buffers: shared hit=9417 read=3
+  CTE topcategory
+    ->  Limit  (cost=18282.74..18282.74 rows=1 width=18) (actual time=145.884..152.048 rows=1.00 loops=1)
+          Buffers: shared hit=9353
+          ->  Sort  (cost=18282.74..18282.75 rows=5 width=18) (actual time=145.883..152.046 rows=1.00 loops=1)
+                Sort Key: (count(*)) DESC, products.product_category
+                Sort Method: top-N heapsort  Memory: 25kB
+                Buffers: shared hit=9353
+                ->  Finalize GroupAggregate  (cost=18281.21..18282.72 rows=5 width=18) (actual time=145.870..152.038 rows=5.00 loops=1)
+                      Group Key: products.product_category
+                      Buffers: shared hit=9353
+                      ->  Gather Merge  (cost=18281.21..18282.61 rows=12 width=18) (actual time=145.859..152.028 rows=15.00 loops=1)
+                            Workers Planned: 2
+                            Workers Launched: 2
+                            Buffers: shared hit=9353
+                            ->  Sort  (cost=17281.18..17281.20 rows=5 width=18) (actual time=118.295..118.300 rows=5.00 loops=3)
+                                  Sort Key: products.product_category
+                                  Sort Method: quicksort  Memory: 25kB
+                                  Buffers: shared hit=9353
+                                  Worker 0:  Sort Method: quicksort  Memory: 25kB
+                                  Worker 1:  Sort Method: quicksort  Memory: 25kB
+                                  ->  Partial HashAggregate  (cost=17281.08..17281.13 rows=5 width=18) (actual time=118.272..118.276 rows=5.00 loops=3)
+                                        Group Key: products.product_category
+                                        Batches: 1  Memory Usage: 32kB
+                                        Buffers: shared hit=9337
+                                        Worker 0:  Batches: 1  Memory Usage: 32kB
+                                        Worker 1:  Batches: 1  Memory Usage: 32kB
+                                        ->  Hash Join  (cost=3061.07..16229.14 rows=210388 width=10) (actual time=6.217..99.145 rows=167262.00 loops=3)
+                                              Hash Cond: (orders.product_id = products.product_id)
+                                              Buffers: shared hit=9337
+                                              ->  Parallel Hash Join  (cost=3012.57..15626.03 rows=210388 width=4) (actual time=5.848..78.980 rows=167262.00 loops=3)
+                                                    Hash Cond: (orders.client_id = clients.id)
+                                                    Buffers: shared hit=9259
+                                                    ->  Parallel Seq Scan on opt_orders orders  (cost=0.00..11519.67 rows=416667 width=20) (actual time=0.007..14.072 rows=333333.33 loops=3)
+                                                          Buffers: shared hit=7353
+                                                    ->  Parallel Hash  (cost=2641.29..2641.29 rows=29702 width=16) (actual time=5.756..5.757 rows=16719.33 loops=3)
+                                                          Buckets: 65536  Batches: 1  Memory Usage: 2880kB
+                                                          Buffers: shared hit=1906
+                                                          ->  Parallel Seq Scan on opt_clients clients  (cost=0.00..2641.29 rows=29702 width=16) (actual time=0.003..10.227 rows=50158.00 loops=1)
+                                                                Filter: ((status)::text = 'active'::text)
+                                                                Rows Removed by Filter: 49842
+                                                                Buffers: shared hit=1906
+                                              ->  Hash  (cost=36.00..36.00 rows=1000 width=14) (actual time=0.363..0.363 rows=1000.00 loops=3)
+                                                    Buckets: 1024  Batches: 1  Memory Usage: 55kB
+                                                    Buffers: shared hit=78
+                                                    ->  Seq Scan on opt_products products  (cost=0.00..36.00 rows=1000 width=14) (actual time=0.179..0.292 rows=1000.00 loops=3)
+                                                          Buffers: shared hit=78
+  InitPlan 2
+    ->  CTE Scan on topcategory  (cost=0.00..0.02 rows=1 width=8) (actual time=145.887..145.889 rows=1.00 loops=1)
+          Storage: Memory  Maximum Storage: 17kB
+          Buffers: shared hit=3907
+  InitPlan 4
+    ->  Subquery Scan on latestorder  (cost=1.16..2.54 rows=1 width=32) (actual time=0.734..0.738 rows=1.00 loops=1)
+          Buffers: shared hit=64 read=3
+          ->  Limit  (cost=1.16..2.53 rows=1 width=8) (actual time=0.721..0.725 rows=1.00 loops=1)
+                Buffers: shared hit=64 read=3
+                InitPlan 3
+                  ->  CTE Scan on topcategory topcategory_1  (cost=0.00..0.02 rows=1 width=118) (actual time=0.001..0.001 rows=1.00 loops=1)
+                        Storage: Memory  Maximum Storage: 17kB
+                ->  Nested Loop  (cost=1.14..139095.90 rows=100986 width=8) (actual time=0.720..0.723 rows=1.00 loops=1)
+                      Buffers: shared hit=64 read=3
+                      ->  Nested Loop  (cost=0.71..80407.30 rows=200000 width=24) (actual time=0.141..0.148 rows=2.00 loops=1)
+                            Buffers: shared hit=56 read=3
+                            ->  Index Scan using idx_orders_date_id on opt_orders orders_1  (cost=0.42..55392.35 rows=1000000 width=28) (actual time=0.085..0.100 rows=17.00 loops=1)
+                                  Index Searches: 1
+                                  Buffers: shared hit=17 read=3
+                            ->  Memoize  (cost=0.29..0.31 rows=1 width=4) (actual time=0.002..0.002 rows=0.12 loops=17)
+                                  Cache Key: orders_1.product_id
+                                  Cache Mode: logical
+                                  Hits: 4  Misses: 13  Evictions: 0  Overflows: 0  Memory Usage: 1kB
+                                  Buffers: shared hit=39
+                                  ->  Index Scan using opt_products_pkey on opt_products products_1  (cost=0.28..0.30 rows=1 width=4) (actual time=0.002..0.002 rows=0.15 loops=13)
+                                        Index Cond: (product_id = orders_1.product_id)
+                                        Filter: ((product_category)::text = ((InitPlan 3).col1)::text)
+                                        Rows Removed by Filter: 1
+                                        Index Searches: 13
+                                        Buffers: shared hit=39
+                      ->  Memoize  (cost=0.43..0.46 rows=1 width=16) (actual time=0.286..0.286 rows=0.50 loops=2)
+                            Cache Key: orders_1.client_id
+                            Cache Mode: logical
+                            Hits: 0  Misses: 2  Evictions: 0  Overflows: 0  Memory Usage: 1kB
+                            Buffers: shared hit=8
+                            ->  Index Scan using opt_clients_pkey on opt_clients clients_1  (cost=0.42..0.45 rows=1 width=16) (actual time=0.014..0.014 rows=0.50 loops=2)
+                                  Index Cond: (id = orders_1.client_id)
+                                  Filter: ((status)::text = 'active'::text)
+                                  Rows Removed by Filter: 0
+                                  Index Searches: 2
+                                  Buffers: shared hit=8
+Planning:
+  Buffers: shared hit=114 read=12
+Planning Time: 4.718 ms
+Execution Time: 153.063 ms
